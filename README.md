@@ -1,6 +1,6 @@
 # 🕒 Strict Pomodoro
 
-**Strict Pomodoro** is a lightweight Linux daemon script that blocks distracting websites during Pomodoro work sessions and automatically unblocks them during breaks. Seamlessly integrated with [**GNOME Pomodoro**](https://github.com/gnome-pomodoro/gnome-pomodoro) for a distraction-free focus workflow.
+**Strict Pomodoro** is a Linux daemon script that blocks distracting websites during Pomodoro work sessions and automatically unblocks them during breaks. Seamlessly integrated with [**GNOME Pomodoro**](https://github.com/gnome-pomodoro/gnome-pomodoro) for a distraction-free focus workflow.
 
 ---
 
@@ -21,7 +21,6 @@
 * 📡 Real-time monitoring of GNOME Pomodoro states via D-Bus.
 * 📝 Simple, editable blocklist (`blocklist.txt`) to customize blocked sites.
 * ⚡ Quick installer for fast setup on new devices.
-* 🗑️ Built-in uninstaller for clean removal.
 
 ---
 
