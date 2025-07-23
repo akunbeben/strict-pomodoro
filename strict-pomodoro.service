@@ -1,0 +1,17 @@
+[Unit]
+Description=Strict Pomodoro Daemon
+After=graphical.target network.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/daemon.sh
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+Environment=DISPLAY=:0
+Environment=XDG_RUNTIME_DIR=/run/user/%U
+
+[Install]
+WantedBy=default.target
