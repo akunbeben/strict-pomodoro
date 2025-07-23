@@ -20,7 +20,7 @@
 1️⃣ Clone the repository:
 
 ```bash
-git clone https://github.com/bennyrahmat/strict-pomodoro.git
+git clone https://github.com/akunbeben/strict-pomodoro.git
 cd strict-pomodoro
 ```
 
