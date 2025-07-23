@@ -1,25 +1,53 @@
 #!/bin/bash
 
-set -e
-
-APP_NAME="Strict Pomodoro"
 SERVICE_NAME="strict-pomodoro"
-SCRIPT_NAME="daemon.sh"
-DATA_DIR="$HOME/.local/share/$SERVICE_NAME"
-INSTALL_DIR="$HOME/.local/bin"
-SYSTEMD_DIR="$HOME/.config/systemd/user"
+INSTALL_DIR="$HOME/.local/share/$SERVICE_NAME"
+BIN_DIR="$HOME/.local/bin"
+SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
+BLOCKLIST_FILE="$INSTALL_DIR/blocklist.txt"
+DAEMON_FILE="$BIN_DIR/strict-pomodoro.sh"
+SERVICE_FILE="$SYSTEMD_USER_DIR/$SERVICE_NAME.service"
 SUDOERS_FILE="/etc/sudoers.d/$SERVICE_NAME"
 
-function uninstall() {
-  echo "🗑️ Uninstalling $APP_NAME..."
-  systemctl --user stop "$SERVICE_NAME.service" 2>/dev/null || true
-  systemctl --user disable "$SERVICE_NAME.service" 2>/dev/null || true
-  rm -f "$SYSTEMD_DIR/$SERVICE_NAME.service"
-  rm -f "$INSTALL_DIR/$SCRIPT_NAME"
-  rm -rf "$DATA_DIR"
+ensure_dirs() {
+  mkdir -p "$INSTALL_DIR" "$BIN_DIR" "$SYSTEMD_USER_DIR"
+}
+
+install_dependencies() {
+  echo "[INFO] Installing dependencies..."
+  sudo apt-get update
+  sudo apt-get install -y gnome-shell-pomodoro dbus
+}
+
+copy_files() {
+  cp daemon.sh "$DAEMON_FILE"
+  chmod +x "$DAEMON_FILE"
+  cp blocklist.txt "$BLOCKLIST_FILE"
+  cp strict-pomodoro.service "$SERVICE_FILE"
+}
+
+configure_sudoers() {
+  echo "[INFO] Configuring sudoers for NOPASSWD..."
+  sudo bash -c "cat > $SUDOERS_FILE" <<EOF
+$(whoami) ALL=(ALL) NOPASSWD: $(which sed), $(which tee)
+EOF
+  sudo chmod 440 $SUDOERS_FILE
+}
+
+enable_service() {
+  systemctl --user daemon-reload
+  systemctl --user enable --now $SERVICE_NAME.service
+  echo "[INFO] $SERVICE_NAME service enabled and started."
+}
+
+uninstall() {
+  echo "[INFO] Uninstalling Strict Pomodoro..."
+  systemctl --user stop $SERVICE_NAME.service
+  systemctl --user disable $SERVICE_NAME.service
+  rm -f "$SERVICE_FILE" "$DAEMON_FILE" "$BLOCKLIST_FILE"
   sudo rm -f "$SUDOERS_FILE"
   systemctl --user daemon-reload
-  echo "✅ $APP_NAME completely uninstalled."
+  echo "[INFO] Uninstall complete."
   exit 0
 }
 
@@ -27,51 +55,8 @@ if [[ "$1" == "--uninstall" ]]; then
   uninstall
 fi
 
-echo "🛠️ Installing $APP_NAME..."
-
-# 1️⃣ Install dependencies
-echo "📦 Installing dependencies..."
-sudo apt-get update
-sudo apt-get install -y gnome-shell-pomodoro dbus
-
-# 2️⃣ Copy daemon script
-mkdir -p "$INSTALL_DIR"
-cp "$(dirname "$0")/$SCRIPT_NAME" "$INSTALL_DIR/"
-chmod +x "$INSTALL_DIR/$SCRIPT_NAME"
-echo "✅ Installed $SCRIPT_NAME to $INSTALL_DIR"
-
-# 3️⃣ Copy blocklist
-mkdir -p "$DATA_DIR"
-cp "$(dirname "$0")/blocklist.txt" "$DATA_DIR/"
-echo "✅ Blocklist installed to $DATA_DIR/blocklist.txt"
-
-# 4️⃣ Add sudoers NOPASSWD rule
-if sudo grep -q "$SERVICE_NAME" "$SUDOERS_FILE" 2>/dev/null; then
-  echo "ℹ️ Sudoers rule exists, skipping..."
-else
-  echo "🔑 Adding sudoers rule..."
-  echo "$USER ALL=(ALL) NOPASSWD: /bin/sed -i /etc/hosts, /usr/bin/tee -a /etc/hosts" | sudo tee "$SUDOERS_FILE" >/dev/null
-  sudo chmod 440 "$SUDOERS_FILE"
-  echo "✅ Sudoers rule added"
-fi
-
-# 5️⃣ Setup systemd user service
-mkdir -p "$SYSTEMD_DIR"
-cp "$(dirname "$0")/strict-pomodoro.service" "$SYSTEMD_DIR/"
-echo "✅ Systemd service installed"
-
-# 6️⃣ Enable & start service
-systemctl --user daemon-reload
-systemctl --user enable --now "$SERVICE_NAME.service"
-echo "🚀 $APP_NAME is now running"
-
-# Summary
-echo ""
-echo "🎉 $APP_NAME installed!"
-echo "Manage it with:"
-echo "  systemctl --user restart $SERVICE_NAME.service"
-echo "  systemctl --user stop $SERVICE_NAME.service"
-echo "  journalctl --user -u $SERVICE_NAME.service -f"
-echo ""
-echo "🗑️ To uninstall:"
-echo "  ./install.sh --uninstall"
+ensure_dirs
+install_dependencies
+copy_files
+configure_sudoers
+enable_service

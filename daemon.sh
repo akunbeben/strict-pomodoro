@@ -7,29 +7,37 @@ if [[ "$parent_cmd" != "systemd" && "$parent_cmd" != "bash" ]]; then
   exit 1
 fi
 
-BLOCKLIST_FILE="$HOME/.local/share/strict-pomodoro/blocklist.txt"
+BLOCKLIST="$HOME/.local/share/strict-pomodoro/blocklist.txt"
 HOSTS_FILE="/etc/hosts"
-BLOCK_MARKER="# STRICT_POMODORO"
+BLOCK_MARKER="# STRICT_POMODORO_BLOCK"
 
 block_sites() {
   echo "[INFO] Blocking distracting sites..."
-  while IFS= read -r site || [[ -n "$site" ]]; do
-    if [[ -n "$site" && ! "$site" =~ ^# ]]; then
-      if ! grep -q "$site $BLOCK_MARKER" $HOSTS_FILE; then
-        echo "127.0.0.1 $site $BLOCK_MARKER" | sudo tee -a $HOSTS_FILE >/dev/null
+  while read -r site; do
+    [[ -z "$site" || "$site" =~ ^# ]] && continue
+    if ! grep -q "$site $BLOCK_MARKER" $HOSTS_FILE; then
+      if ! echo "127.0.0.1 $site $BLOCK_MARKER" | sudo -n tee -a $HOSTS_FILE >/dev/null; then
+        echo "[ERROR] Failed to block $site. Check sudoers NOPASSWD."
+        echo ""
+        logger -t strict-pomodoro "Failed to block $site (missing NOPASSWD?)."
       fi
     fi
-  done <"$BLOCKLIST_FILE"
+  done <"$BLOCKLIST"
   echo "[INFO] Websites BLOCKED (Work phase)"
   echo ""
   logger -t strict-pomodoro "Blocked distracting sites (Work phase)."
 }
 
 unblock_sites() {
-  sudo sed -i "/$BLOCK_MARKER/d" $HOSTS_FILE
-  echo "[INFO] Websites UNBLOCKED (Break/Idle phase)"
-  echo ""
-  logger -t strict-pomodoro "Unblocked distracting sites (Break/Idle phase)."
+  if ! sudo -n sed -i "/$BLOCK_MARKER/d" $HOSTS_FILE; then
+    echo "[ERROR] Failed to unblock sites. Check sudoers NOPASSWD."
+    echo ""
+    logger -t strict-pomodoro "Failed to unblock sites (missing NOPASSWD?)."
+  else
+    echo "[INFO] Websites UNBLOCKED (Break/Idle phase)"
+    echo ""
+    logger -t strict-pomodoro "Unblocked distracting sites (Break/Idle phase)."
+  fi
 }
 
 handle_state() {
@@ -43,7 +51,7 @@ handle_state() {
     unblock_sites
     ;;
   *)
-    echo "[WARN] Unknown state: $1"
+    echo "[WARN] Unknown state detected: $1"
     logger -t strict-pomodoro "Unknown state: $1"
     ;;
   esac
@@ -65,7 +73,7 @@ gdbus monitor --session \
   while read -r line; do
     if [[ "$line" == *"org.gnome.Pomodoro.StateChanged"* ]]; then
       new_state=$(echo "$line" | awk -F"name': <'" '{print $2}' | awk -F"'>" '{print $1}')
-      echo "[EVENT] StateChanged: $new_state"
+      echo "[EVENT] StateChanged detected: $new_state"
       handle_state "$new_state"
     fi
   done
