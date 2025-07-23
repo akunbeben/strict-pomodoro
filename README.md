@@ -1,6 +1,16 @@
 # 🕒 Strict Pomodoro
 
-**Strict Pomodoro** is a lightweight Linux daemon that blocks distracting websites during Pomodoro work sessions and automatically unblocks them during breaks. Seamlessly integrated with [**GNOME Pomodoro**](https://github.com/gnome-pomodoro/gnome-pomodoro) for a distraction-free focus workflow.
+**Strict Pomodoro** is a lightweight Linux daemon script that blocks distracting websites during Pomodoro work sessions and automatically unblocks them during breaks. Seamlessly integrated with [**GNOME Pomodoro**](https://github.com/gnome-pomodoro/gnome-pomodoro) for a distraction-free focus workflow.
+
+---
+
+## 📖 How It Works
+
+1. When GNOME Pomodoro enters the `pomodoro` state, Strict Pomodoro:
+   * Adds entries to `/etc/hosts` to redirect distracting websites to `127.0.0.1`.
+
+2. When GNOME Pomodoro switches to `short-break`, `long-break`, or becomes idle:
+   * Removes the blocking entries from `/etc/hosts`.
 
 ---
 
@@ -92,13 +102,4 @@ To completely remove Strict Pomodoro:
   gnome-pomodoro --no-default-window
   ```
 
----
-
-## 📖 How It Works
-
-1. When GNOME Pomodoro enters the `pomodoro` state, Strict Pomodoro:
-   * Adds entries to `/etc/hosts` to redirect distracting websites to `127.0.0.1`.
-
-2. When GNOME Pomodoro switches to `short-break`, `long-break`, or becomes idle:
-   * Removes the blocking entries from `/etc/hosts`.
 
