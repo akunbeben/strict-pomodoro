@@ -9,14 +9,39 @@ fi
 
 BLOCKLIST="$HOME/.local/share/strict-pomodoro/blocklist.txt"
 HOSTS_MANAGER="/usr/local/bin/strict-pomodoro-hosts-manager"
+CHROME_REMOTE_URL="http://localhost:9222/json"
+
+close_blocked_tabs() {
+  echo "[INFO] Checking and closing blocked tabs..."
+
+  local urls
+  urls=$(curl -s "$CHROME_REMOTE_URL" | jq -r '.[] | select(.type == "page") | "\(.id) \(.url)"')
+
+  while IFS= read -r site; do
+    [[ -z "$site" || "$site" =~ ^[[:space:]]*# ]] && continue
+    site="${site#"${site%%[![:space:]]*}"}"
+    site="${site%"${site##*[![:space:]]}"}"
+
+    while IFS= read -r line; do
+      tab_id=$(awk '{print $1}' <<<"$line")
+      tab_url=$(awk '{print $2}' <<<"$line")
+
+      if [[ "$tab_url" == *"$site"* ]]; then
+        echo "[TAB] Closing $tab_url"
+        curl -s "$CHROME_REMOTE_URL/close/$tab_id" >/dev/null
+        logger -t strict-pomodoro "Closed tab for $tab_url"
+      fi
+    done <<<"$urls"
+
+  done <"$BLOCKLIST"
+}
 
 block_sites() {
   echo "[INFO] Blocking distracting sites..."
 
   while IFS= read -r site; do
     # Skip empty lines and comments
-    [[ -z "$site" ]] && continue
-    [[ "$site" =~ ^[[:space:]]*# ]] && continue
+    [[ -z "$site" || "$site" =~ ^[[:space:]]*# ]] && continue
 
     # Remove leading/trailing whitespace
     site="${site#"${site%%[![:space:]]*}"}"
@@ -30,6 +55,8 @@ block_sites() {
       logger -t strict-pomodoro "Failed to block $site."
     fi
   done <"$BLOCKLIST"
+
+  close_blocked_tabs
 
   echo "[INFO] Websites BLOCKED (Work phase)"
   echo ""
@@ -88,7 +115,6 @@ gdbus monitor --session \
   --object-path /org/gnome/Pomodoro |
   while IFS= read -r line; do
     if [[ "$line" == *"org.gnome.Pomodoro.StateChanged"* ]]; then
-      # Extract state using pure bash
       if [[ "$line" =~ name\':[[:space:]]*\<\'([^\']+)\' ]]; then
         new_state="${BASH_REMATCH[1]}"
         echo "[EVENT] StateChanged detected: $new_state"
