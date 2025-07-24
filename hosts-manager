@@ -1,0 +1,53 @@
+#!/bin/bash
+
+# Strict Pomodoro Hosts Manager
+# This script can only modify /etc/hosts for strict-pomodoro blocks
+
+HOSTS_FILE="/etc/hosts"
+BLOCK_MARKER="# STRICT_POMODORO_BLOCK"
+
+case "$1" in
+  block)
+    if [[ -z "$2" ]]; then
+      echo "[ERROR] No site specified for blocking"
+      exit 1
+    fi
+    site="$2"
+    # Validate site format (basic security check)
+    if [[ ! "$site" =~ ^[a-zA-Z0-9.-]+$ ]]; then
+      echo "[ERROR] Invalid site format"
+      exit 1
+    fi
+    # Check if already blocked
+    blocked=false
+    while IFS= read -r line; do
+      if [[ "$line" == *"$site $BLOCK_MARKER"* ]]; then
+        blocked=true
+        break
+      fi
+    done < "$HOSTS_FILE"
+    
+    # Only add if not already blocked
+    if [[ "$blocked" == false ]]; then
+      echo "127.0.0.1 $site $BLOCK_MARKER" >> "$HOSTS_FILE"
+    fi
+    ;;
+  unblock)
+    temp_file=$(mktemp)
+    
+    chmod 644 "$temp_file"
+    chown root:root "$temp_file"
+    
+    while IFS= read -r line; do
+      if [[ "$line" != *"$BLOCK_MARKER"* ]]; then
+        echo "$line" >> "$temp_file"
+      fi
+    done < "$HOSTS_FILE"
+    
+    mv "$temp_file" "$HOSTS_FILE"
+    ;;
+  *)
+    echo "Usage: $0 {block <site>|unblock}"
+    exit 1
+    ;;
+esac

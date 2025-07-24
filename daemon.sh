@@ -2,37 +2,45 @@
 
 parent_cmd=$(ps -o comm= -p $PPID 2>/dev/null)
 if [[ "$parent_cmd" != "systemd" && "$parent_cmd" != "bash" ]]; then
-  echo "❌ ERROR: This script must run as a daemon." >&2
+  echo "[ERROR] This script must run as a daemon." >&2
   logger -t strict-pomodoro "Rejected execution attempt: parent process '$parent_cmd'"
   exit 1
 fi
 
 BLOCKLIST="$HOME/.local/share/strict-pomodoro/blocklist.txt"
-HOSTS_FILE="/etc/hosts"
-BLOCK_MARKER="# STRICT_POMODORO_BLOCK"
+HOSTS_MANAGER="/usr/local/bin/strict-pomodoro-hosts-manager"
 
 block_sites() {
   echo "[INFO] Blocking distracting sites..."
-  while read -r site; do
-    [[ -z "$site" || "$site" =~ ^# ]] && continue
-    if ! grep -q "$site $BLOCK_MARKER" $HOSTS_FILE; then
-      if ! echo "127.0.0.1 $site $BLOCK_MARKER" | sudo -n tee -a $HOSTS_FILE >/dev/null; then
-        echo "[ERROR] Failed to block $site. Check sudoers NOPASSWD."
-        echo ""
-        logger -t strict-pomodoro "Failed to block $site (missing NOPASSWD?)."
-      fi
+
+  while IFS= read -r site; do
+    # Skip empty lines and comments
+    [[ -z "$site" ]] && continue
+    [[ "$site" =~ ^[[:space:]]*# ]] && continue
+
+    # Remove leading/trailing whitespace
+    site="${site#"${site%%[![:space:]]*}"}"
+    site="${site%"${site##*[![:space:]]}"}"
+
+    [[ -z "$site" ]] && continue
+
+    if ! sudo -n "$HOSTS_MANAGER" block "$site"; then
+      echo "[ERROR] Failed to block $site. Check sudoers configuration."
+      echo ""
+      logger -t strict-pomodoro "Failed to block $site."
     fi
   done <"$BLOCKLIST"
+
   echo "[INFO] Websites BLOCKED (Work phase)"
   echo ""
   logger -t strict-pomodoro "Blocked distracting sites (Work phase)."
 }
 
 unblock_sites() {
-  if ! sudo -n sed -i "/$BLOCK_MARKER/d" $HOSTS_FILE; then
-    echo "[ERROR] Failed to unblock sites. Check sudoers NOPASSWD."
+  if ! sudo -n "$HOSTS_MANAGER" unblock; then
+    echo "[ERROR] Failed to unblock sites. Check sudoers configuration."
     echo ""
-    logger -t strict-pomodoro "Failed to unblock sites (missing NOPASSWD?)."
+    logger -t strict-pomodoro "Failed to unblock sites."
   else
     echo "[INFO] Websites UNBLOCKED (Break/Idle phase)"
     echo ""
@@ -57,12 +65,20 @@ handle_state() {
   esac
 }
 
-current_state=$(gdbus call --session \
+get_state_from_dbus() {
+  local dbus_output="$1"
+  local temp="${dbus_output#*\'}"
+  echo "${temp%%\'*}"
+}
+
+# Get initial state
+current_state_raw=$(gdbus call --session \
   --dest org.gnome.Pomodoro \
   --object-path /org/gnome/Pomodoro \
   --method org.freedesktop.DBus.Properties.Get \
-  org.gnome.Pomodoro State 2>/dev/null |
-  awk -F"'" '{print $2}')
+  org.gnome.Pomodoro State 2>/dev/null)
+
+current_state=$(get_state_from_dbus "$current_state_raw")
 echo "[INIT] Initial Pomodoro state: $current_state"
 handle_state "$current_state"
 
@@ -70,10 +86,13 @@ echo "[DAEMON] Monitoring Pomodoro StateChanged signals..."
 gdbus monitor --session \
   --dest org.gnome.Pomodoro \
   --object-path /org/gnome/Pomodoro |
-  while read -r line; do
+  while IFS= read -r line; do
     if [[ "$line" == *"org.gnome.Pomodoro.StateChanged"* ]]; then
-      new_state=$(echo "$line" | awk -F"name': <'" '{print $2}' | awk -F"'>" '{print $1}')
-      echo "[EVENT] StateChanged detected: $new_state"
-      handle_state "$new_state"
+      # Extract state using pure bash
+      if [[ "$line" =~ name\':[[:space:]]*\<\'([^\']+)\' ]]; then
+        new_state="${BASH_REMATCH[1]}"
+        echo "[EVENT] StateChanged detected: $new_state"
+        handle_state "$new_state"
+      fi
     fi
   done
