@@ -1,68 +1,92 @@
 # 🕒 Strict Pomodoro
 
-**Strict Pomodoro** is a Linux daemon script that blocks distracting websites during Pomodoro work sessions and automatically unblocks them during breaks. Seamlessly integrated with [**GNOME Pomodoro**](https://github.com/gnome-pomodoro/gnome-pomodoro) for a distraction-free focus workflow.
+**Strict Pomodoro** is a powerful daemon for Linux that enforces a distraction-free work environment by blocking websites during Pomodoro sessions. It integrates directly with [**GNOME Pomodoro**](https://github.com/gnome-pomodoro/gnome-pomodoro) via D-Bus to automatically block sites when you start working and unblock them when you're on a break.
 
 ---
 
 ## 📖 How It Works
 
-1. When GNOME Pomodoro enters the `pomodoro` state, Strict Pomodoro:
-   * Adds entries to `/etc/hosts` to redirect distracting websites to `127.0.0.1`.
-   * Closes any open browser tabs that match the blocklist.
+Strict Pomodoro uses a secure, modular approach to manage focus time:
 
-2. When GNOME Pomodoro switches to `short-break`, `long-break`, or becomes idle:
-   * Removes the blocking entries from `/etc/hosts`.
+1.  **Daemon (`daemon.sh`):** A systemd user service runs in the background, monitoring GNOME Pomodoro's state via D-Bus.
+2.  **State Change:** When the daemon detects a state change (e.g., from `break` to `pomodoro`), it triggers the appropriate action.
+3.  **Hosts Manager (`hosts-manager`):**
+    *   **Block:** During a `pomodoro` state, the daemon invokes the `hosts-manager` script with `sudo` to add entries for each site in your blocklist to `/etc/hosts`, redirecting them to `127.0.0.1`.
+    *   **Unblock:** During `short-break`, `long-break`, or idle states, it removes *only* the lines it added, leaving the rest of `/etc/hosts` untouched.
+4.  **Tab Closing (Optional):** If enabled, the daemon will also close any open browser tabs that match the sites in your blocklist.
+
+This design ensures that `/etc/hosts` is modified in a safe and controlled manner, without giving the main daemon script broad root permissions.
 
 ---
 
 ## 🚀 Features
 
-* 🔒 **Blocks distracting websites** (Facebook, YouTube, Twitter, etc.) during Pomodoro focus sessions.
-* 탭 **Closes distracting tabs** to prevent you from getting sidetracked by already-open sites.
-* 🔓 **Automatically unblocks** sites during short breaks or long breaks.
-* 📡 Real-time monitoring of GNOME Pomodoro states via D-Bus.
-* 📝 Simple, editable blocklist (`blocklist.txt`) to customize blocked sites.
-* ⚡ Quick installer for fast setup on new devices.
+*   🔒 **Secure Host File Management:** Uses a dedicated, restricted script (`hosts-manager`) to safely block and unblock sites.
+*   🛡️ **Restricted Permissions:** The installer configures a `sudoers` rule to grant passwordless execution *only* for the specific `hosts-manager` script, preventing escalation.
+*   📡 **Real-time Monitoring:** Instantly reacts to GNOME Pomodoro state changes using D-Bus signals.
+*   탭 **Closes Distracting Tabs:** Prevents you from getting sidetracked by already-open sites (requires browser setup).
+*   📝 **Simple Blocklist:** Customize your list of blocked sites in a plain text file.
+*   ⚙️ **Systemd Integration:** Runs as a reliable systemd user service.
+*   🚀 **Automated Installer:** Quick setup and configuration with a single command.
 
 ---
 
 ## 📦 Installation
 
-> **Note:** The tab-closing feature requires Google Chrome or a Chromium-based browser with remote debugging enabled. See the **Browser Integration** section for details.
+### Dependencies
+The installer will attempt to install these for you, but you can install them manually:
+*   `gnome-shell-pomodoro`
+*   `dbus` (usually pre-installed)
+*   `jq` (for the optional tab-closing feature)
 
-1️⃣ Clone the repository:
+### 1. Clone the Repository
 
 ```bash
 git clone https://github.com/akunbeben/strict-pomodoro.git
 cd strict-pomodoro
 ```
 
-2️⃣ Run the installer:
+### 2. Run the Installer
 
 ```bash
 chmod +x install.sh
 ./install.sh
 ```
 
-The installer will:
-
-* Install dependencies (`gnome-shell-pomodoro`, `dbus`)
-* Copy the daemon script to `~/.local/bin`
-* Set up a systemd user service
-* Enable and start the service
+The installer automates the following steps:
+1.  **Installs Dependencies:** Ensures `gnome-shell-pomodoro` and `dbus` are installed.
+2.  **Copies Scripts:**
+    *   `daemon.sh` is copied to `~/.local/bin/strict-pomodoro.sh`.
+    *   `hosts-manager` is securely copied to `/usr/local/bin/strict-pomodoro-hosts-manager` with `root` ownership.
+3.  **Sets Up Blocklist:** A default `blocklist.txt` is placed in `~/.local/share/strict-pomodoro/`.
+4.  **Configures Sudoers:** A file is created at `/etc/sudoers.d/strict-pomodoro` to allow the daemon to run the `hosts-manager` script without a password.
+5.  **Deploys Service:** The systemd user service file is copied to `~/.config/systemd/user/`.
+6.  **Starts Service:** The systemd user daemon is reloaded, and the `strict-pomodoro` service is enabled and started.
 
 ---
 
-## 📝 Edit Blocklist
+## 🛡️ Security Model
 
-The list of blocked websites is stored in:
+Modifying `/etc/hosts` requires root privileges. To avoid running the entire daemon as root, Strict Pomodoro uses a more secure model:
 
-```bash
-~/.local/share/strict-pomodoro/blocklist.txt
-```
+1.  A minimal script, `hosts-manager`, is placed in `/usr/local/bin` and owned by `root`. Its sole purpose is to add or remove specific lines from `/etc/hosts`.
+2.  The installer adds a rule to `/etc/sudoers.d/`. This rule allows your user to execute *only* the `hosts-manager` script with `sudo` without being prompted for a password.
+3.  The main `daemon.sh` script, which runs with user privileges, can then call `sudo strict-pomodoro-hosts-manager` to safely perform the block/unblock actions.
 
-Example:
+This isolates the root-level operations, ensuring the daemon cannot perform any unauthorized actions.
 
+---
+
+## ⚙️ Configuration
+
+### Edit Blocklist
+
+The list of blocked websites is stored at:
+`~/.local/share/strict-pomodoro/blocklist.txt`
+
+You can add or remove any domain.
+
+**Example:**
 ```
 www.facebook.com
 youtube.com
@@ -70,64 +94,60 @@ twitter.com
 instagram.com
 ```
 
-To apply changes:
-
+After editing the file, restart the service to apply changes:
 ```bash
 systemctl --user restart strict-pomodoro.service
 ```
+
+### Browser Integration (Tab Closing)
+
+The automatic tab-closing feature uses the Chrome DevTools Protocol and requires a Chromium-based browser (Google Chrome, Chromium, Brave, etc.).
+
+**Requirements:**
+*   `jq` command-line JSON processor must be installed (`sudo apt install jq`).
+*   Your browser must be launched with remote debugging enabled.
+
+**How to Enable Remote Debugging:**
+
+Launch your browser from the terminal with the remote debugging flag.
+
+```bash
+# For Google Chrome
+google-chrome --remote-debugging-port=9222 &
+
+# For Chromium
+chromium-browser --remote-debugging-port=9222 &
+```
+
+To make this permanent, edit your browser's `.desktop` file (e.g., in `/usr/share/applications/`) and add the `--remote-debugging-port=9222` flag to the `Exec` line.
+
+---
+
+## 🛠️ Managing the Service
+
+*   **Check Status:**
+    ```bash
+    systemctl --user status strict-pomodoro.service
+    ```
+
+*   **View Live Logs:**
+    ```bash
+    journalctl --user -u strict-pomodoro.service -f
+    ```
+
+*   **Start GNOME Pomodoro (Headless):**
+    ```bash
+    gnome-pomodoro --no-default-window
+    ```
 
 ---
 
 ## 🗑️ Uninstall
 
-To completely remove Strict Pomodoro:
+To completely remove Strict Pomodoro and all its components:
 
 ```bash
 ./install.sh --uninstall
 ```
 
----
-
-## 🔥 Pro Tips
-
-* Check service status:
-  ```bash
-  systemctl --user status strict-pomodoro.service
-  ```
-
-* View live logs:
-  ```bash
-  journalctl --user -u strict-pomodoro.service -f
-  ```
-
-* Start GNOME Pomodoro in background:
-  ```bash
-  gnome-pomodoro --no-default-window
-  ```
-
----
-
-## 🌐 Browser Integration
-
-The automatic tab-closing feature uses the Chrome DevTools Protocol to communicate with your browser.
-
-**Requirements:**
-* Google Chrome, Chromium, or another Chromium-based browser.
-* Remote debugging must be enabled.
-
-**How to Enable Remote Debugging:**
-
-1.  **Find your browser's executable.**
-2.  **Launch it with the remote debugging flag:**
-    ```bash
-    google-chrome --remote-debugging-port=9222 &
-    ```
-    or for other browsers:
-    ```bash
-    chromium-browser --remote-debugging-port=9222 &
-    ```
-3.  To make this permanent, you can:
-    *   Edit your browser's `.desktop` file (e.g., `/usr/share/applications/google-chrome.desktop`) and add the flag to the `Exec` line.
-    *   If you use a keyboard shortcut to launch your browser, update the shortcut command to include the `--remote-debugging-port=9222` flag.
-
-
+This will stop the service, remove all installed files (including the scripts, blocklist, service file, and sudoers rule), and restore your system to its previous state.
